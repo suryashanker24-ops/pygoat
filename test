@@ -1,0 +1,368 @@
+# Lab 0 : Environment Set-Up Report
+
+## Student Information
+- Name: Surya Shanker
+- Course: IKB42603 Cloud Computing Security Essentials
+- Lab Task: Lab 0 - Environment Setup
+- Lecturer Name: Nor Adani Kamal Mohamad Nasir
+
+## Overview
+This report documents the setup and verification of the required local development environment for Lab 0. The purpose of this lab was to prepare a working local system that can support containerization, cloud command-line interaction, Kubernetes-based development, and local AWS service simulation. The environment was prepared on a **Kali Linux** system, which is Debian-based but is not officially supported by Docker's installation repositories. This meant a few extra troubleshooting steps were required compared to a standard Ubuntu setup, including manually configuring the Docker APT repository and resolving a LocalStack licensing issue. Each tool was tested using terminal commands and supported by screenshots as evidence of successful installation and verification.
+
+## Objectives
+The objectives of this lab are:
+- Install and verify Docker for container-based development and container management.
+- Install and verify AWS CLI v2 so that AWS services can be managed from the terminal.
+- Install and verify Kind and kubectl to support local Kubernetes cluster creation and management.
+- Install and verify helper utilities such as OpenSSL and oathtool for secure communication and authentication-related tasks.
+- Start, verify, and manage LocalStack locally to simulate AWS services without requiring a real AWS account.
+- Configure AWS CLI for LocalStack and confirm that the system is ready for local cloud-based testing.
+- Record the installation process clearly and provide evidence through screenshots and command outputs.
+
+## Learning Outcomes
+By completing this lab, the student should be able to:
+- Understand the basic setup process for essential cloud and container development tools.
+- Install and verify tools commonly used in cloud computing and DevOps environments.
+- Configure a local environment for testing container, Kubernetes, and AWS-related workflows.
+- Diagnose and resolve OS-specific installation issues when official documentation does not directly cover the distribution being used.
+- Document technical procedures clearly using terminal commands and screenshots as evidence.
+
+## Environment and Prerequisites
+The lab was conducted on a local **Kali Linux** environment with internet access for downloading installation packages. The following tools were required or expected to be available before starting the lab:
+- Kali Linux with sudo privileges.
+- Internet access for downloading software packages and binaries.
+- A terminal or command-line interface.
+- Sufficient system permissions to install software and start services.
+- Docker support for running LocalStack and Kind-based Kubernetes operations.
+
+---
+
+## Step 1: Install and Verify Docker
+Docker is a platform used to build, run, and manage containers. It is an important tool in cloud computing and DevOps because it allows applications to be packaged in a portable way and run consistently across different environments. In this lab, Docker was installed to prepare the system for container-based development and to ensure that the environment could support future cloud and Kubernetes-related tasks.
+
+### Purpose
+- Install Docker Engine on the local environment.
+- Verify that Docker is available and functioning properly from the terminal.
+- Confirm that the system is ready to run container-based applications.
+
+### Issue Encountered: Kali Linux Repository Not Supported
+The official Docker convenience script (`curl -fsSL https://get.docker.com | sh`) failed with the error:
+```
+E: The repository 'https://download.docker.com/linux/debian kali-rolling Release' does not have a Release file.
+```
+This happened because Docker's official repository does not recognize `kali-rolling` as a valid release codename. Since Kali Linux is built on **Debian Bookworm**, the fix was to manually add Docker's repository using the `bookworm` codename instead of relying on the auto-detect script.
+
+### Terminal Commands
+```bash
+# Remove any broken/partial installs
+sudo apt-get remove docker docker-engine docker.io containerd runc -y
+
+# Install prerequisites
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+
+# Add Docker's official GPG key
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the Docker repository, using bookworm instead of kali-rolling
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Update and install Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Enable and start the Docker service
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Allow running Docker without sudo
+sudo usermod -aG docker $USER
+# (log out and back in / reboot for group change to take effect)
+
+# Verify installation
+docker --version
+docker run --rm hello-world
+```
+
+### Explanation of the Commands
+- `apt-get remove` clears out any previously broken or partial Docker installation attempts.
+- `install -m 0755 -d /etc/apt/keyrings` and the `curl`/`chmod` commands download and register Docker's official signing key so packages can be verified.
+- The `echo ... | sudo tee` command manually registers Docker's APT repository using the `bookworm` codename, since Kali's own `kali-rolling` codename is not recognized by Docker.
+- `apt-get install` installs Docker Engine, the CLI, containerd, and the buildx/compose plugins.
+- `systemctl enable` and `systemctl start` ensure Docker runs automatically and is active immediately.
+- `usermod -aG docker $USER` adds the current user to the `docker` group so Docker commands can be run without `sudo`. A logout/login (or reboot) is required for this to take effect.
+- `docker --version` confirms the installed version.
+- `docker run --rm hello-world` verifies that Docker can successfully pull and run a container.
+
+### Evidence
+![Docker installation output part 1](img/1-docker-install-part1.png)
+
+![Docker installation output part 2](img/1-docker-install-part2.png)
+
+![Docker version and hello-world verification](img/1-docker-verify.png)
+
+### Notes
+The Docker installation initially failed due to Kali Linux's release codename (`kali-rolling`) not being supported by Docker's official repository. This was resolved by manually configuring the APT source to use the `bookworm` codename instead, since Kali is Debian Bookworm-based. After this fix, Docker installed successfully, the service started automatically, and the `hello-world` container ran without issues — confirming Docker was fully operational.
+
+---
+
+## Step 2: AWS CLI v2 Installation and Verification
+AWS CLI v2 is a command-line tool that allows users to interact with AWS services directly from the terminal. It is useful for managing cloud resources, checking service status, and automating cloud tasks. In this lab, AWS CLI was installed so that later steps could connect to LocalStack and test AWS-related commands locally without using the full cloud environment.
+
+### Purpose
+- Install AWS CLI v2 on the system.
+- Verify that the CLI is installed and accessible from the command line.
+- Prepare the environment for future AWS and LocalStack interaction.
+
+### Terminal Commands
+```bash
+curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o awscliv2.zip
+unzip awscliv2.zip
+sudo ./aws/install
+aws --version
+```
+
+### Explanation of the Commands
+- `curl` downloads the AWS CLI installation package from the official AWS source.
+- `unzip` extracts the downloaded archive so the installation files can be used.
+- `sudo ./aws/install` installs AWS CLI v2 on the system.
+- `aws --version` confirms that the installation completed successfully and displays the installed version.
+
+### Evidence
+![AWS CLI download and install](img/2-aws-cli-install.png)
+
+![AWS CLI, kind, and kubectl version verification](img/2-3-aws-kind-kubectl-verify.png)
+
+### Notes
+AWS CLI v2 was successfully installed and verified, showing `aws-cli/2.36.8`. This confirms that the system is ready to interact with AWS services and LocalStack.
+
+---
+
+## Step 3: Install and Verify Kind and Kubectl
+Kind is a tool that allows users to run local Kubernetes clusters using Docker containers. It is commonly used in development and testing because it provides a lightweight and practical way to simulate a Kubernetes environment without needing a full cloud cluster. kubectl is the command-line client used to interact with Kubernetes clusters, including creating resources and checking cluster status. Together, these tools are important for working with container orchestration in a local environment.
+
+### Purpose
+- Install Kind for easy local Kubernetes cluster creation.
+- Install kubectl for managing Kubernetes clusters from the terminal.
+- Verify both tools to ensure they are ready for use.
+
+### Terminal Commands
+```bash
+# Install kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Install kubectl (Kali does not have snap by default, so the direct binary is used)
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/kubectl
+
+# Verify
+kind --version
+kubectl version --client
+```
+
+### Explanation of the Commands
+- `curl -Lo ./kind` downloads the Kind binary from the official release page.
+- `chmod +x ./kind` makes the downloaded file executable.
+- `sudo mv ./kind /usr/local/bin/kind` installs Kind so that it can be used anywhere in the terminal.
+- The `kubectl` install uses `curl` to fetch the latest stable release binary directly, since `snap` is not available by default on Kali.
+- `chmod +x kubectl` and `sudo mv kubectl /usr/local/bin/kubectl` install kubectl system-wide.
+- `kind --version` and `kubectl version --client` confirm both tools installed correctly.
+
+### Evidence
+![Kind and kubectl version verification](img/2-3-aws-kind-kubectl-verify.png)
+
+### Notes
+Both Kind (`v0.23.0`) and kubectl (Client Version `v1.36.3`) were installed successfully and verified from the terminal. This confirms that the local Kubernetes environment is ready for use.
+
+---
+
+## Step 4: Install and Verify Helper Tools
+OpenSSL and oathtool are helper utilities used for cryptographic operations and authentication tasks. OpenSSL is used for encryption, key generation, and certificates, while oathtool generates MFA/TOTP codes needed for Lab 4.
+
+### Purpose
+- Confirm OpenSSL is available (pre-installed by default on most Linux distributions, including Kali).
+- Install and verify oathtool for MFA/TOTP code generation.
+
+### Terminal Commands
+```bash
+openssl version
+sudo apt install -y oathtool
+oathtool --version
+```
+
+### Explanation of the Commands
+- `openssl version` confirms OpenSSL is present and displays its version, since it comes pre-installed on Kali.
+- `apt install -y oathtool` installs the OATH Toolkit package.
+- `oathtool --version` verifies the installation.
+
+### Evidence
+`oathtool (OATH Toolkit) 2.6.14` was confirmed via terminal output.
+
+> **Note for submission:** Screenshots for `openssl version` and `oathtool --version` were not captured during this session and should be added here before final submission.
+
+### Notes
+Both helper tools were confirmed to be available on the system, completing the prerequisite tooling required for later labs (Lab 3 for OpenSSL, Lab 4 for oathtool).
+
+---
+
+## Step 5: Kubernetes Cluster (Kind) and LocalStack Setup
+
+### 5.1 LocalStack Start, Verify, and Troubleshooting
+LocalStack is a local AWS cloud service emulator used to simulate AWS services without requiring a real AWS account. During setup, LocalStack initially failed to run.
+
+#### Issue Encountered: LocalStack Pro License Error
+Running the container using the `latest` tag caused it to exit immediately with the following error:
+```
+License activation failed!
+Reason: No credentials were found in the environment.
+LocalStack pro features can only be used with a valid license.
+```
+This occurred because the `latest` tag currently defaults to LocalStack's **Pro** edition, which requires a paid license key. Since this lab only requires the free **Community** edition, the fix was to pin the image to a specific older version instead of using `latest`.
+
+#### Terminal Commands
+```bash
+# Initial attempt (failed - defaulted to Pro edition)
+docker run -d --name localstack -p 4566:4566 localstack/localstack
+curl http://localhost:4566/_localstack/health   # Connection failed
+
+# Diagnosis
+docker ps                # container not listed - had exited
+docker ps -a              # showed "Exited (55)"
+docker logs localstack    # revealed the Pro license error
+
+# Fix: remove and re-run with a pinned Community edition version
+docker rm -f localstack
+docker run -d --name localstack -p 4566:4566 localstack/localstack:3.8.1
+
+# Verify
+sleep 15
+curl http://localhost:4566/_localstack/health
+
+# Cluster creation
+kind create cluster --name ccse
+kubectl cluster-info --context kind-ccse
+kubectl get nodes
+```
+
+#### Explanation of the Commands
+- `docker run -d --name localstack -p 4566:4566 localstack/localstack` starts a LocalStack container in the background, mapping port 4566.
+- `docker ps` / `docker ps -a` were used to check whether the container was still running or had exited.
+- `docker logs localstack` displayed the exact reason for the failure — a Pro license requirement.
+- Re-running with the tag `:3.8.1` pins the container to the free Community edition, avoiding the license wall.
+- `curl http://localhost:4566/_localstack/health` confirms LocalStack services are available and reports the running edition.
+- `kind create cluster --name ccse` creates a local Kubernetes cluster named `ccse`.
+- `kubectl cluster-info` and `kubectl get nodes` confirm the cluster's control plane is running and the node is `Ready`.
+
+#### Evidence
+![Initial LocalStack attempt - connection failed](img/5-localstack-first-attempt.png)
+
+![docker ps showing no running containers](img/5-docker-ps-empty.png)
+
+![docker logs showing the Pro license error](img/5-docker-logs-license-error.png)
+
+![LocalStack health check succeeding on Community edition 3.8.1](img/5-localstack-health-success.png)
+
+![Kind cluster "ccse" created successfully](img/5-kind-cluster-create.png)
+
+### Notes
+The Kubernetes cluster was created and verified successfully, showing node `ccse-control-plane` as `Ready`. LocalStack was successfully started after pinning the image version to `3.8.1`, avoiding the Pro license requirement that comes with the `latest` tag. The health check confirmed `"edition": "community"` with all required AWS services (`s3`, `iam`, `dynamodb`, `sts`, etc.) reported as available.
+
+---
+
+## Step 6: Configure AWS CLI for LocalStack
+Configuring AWS CLI for LocalStack is an important step because it allows command-line AWS operations to be directed to the local simulation environment rather than the real AWS cloud. This setup is useful because it enables developers to test AWS-related commands safely and efficiently without requiring live cloud resources.
+
+### Purpose
+- Configure AWS CLI credentials and region for LocalStack.
+- Prepare the environment for local AWS service testing.
+- Ensure that AWS CLI can send requests to a local mock service.
+
+### Terminal Commands
+```bash
+aws configure set aws_access_key_id test
+aws configure set aws_secret_access_key test
+aws configure set region us-east-1
+
+EP='--endpoint-url=http://localhost:4566'
+aws $EP sts get-caller-identity
+```
+
+### Explanation of the Commands
+- `aws configure set` commands set dummy access key, secret key, and region values, since LocalStack accepts any credentials.
+- The `EP` variable stores the LocalStack endpoint URL so it can be reused in commands without retyping it each time.
+- `aws $EP sts get-caller-identity` sends a request to LocalStack to confirm that the CLI is correctly communicating with it.
+
+### Evidence
+![AWS CLI configured and returning a caller identity from LocalStack](img/6-kubectl-aws-sts-verify.png)
+
+### Notes
+The AWS CLI was configured successfully for LocalStack use, returning a mock identity (`Account: 000000000000`, `Arn: arn:aws:iam::000000000000:root`). This confirms LocalStack and the AWS CLI are correctly linked and ready for use in later labs.
+
+---
+
+## Pre-Lab Verification Checklist
+The following checklist was verified based on the lab results and screenshots:
+
+- [x] Docker installed and verified.
+- [x] Docker version confirmed (`Docker version 29.6.2`).
+- [x] AWS CLI v2 installed and verified (`aws-cli/2.36.8`).
+- [x] Kind installed and verified (`kind version 0.23.0`).
+- [x] kubectl installed and verified (Client Version `v1.36.3`).
+- [x] OpenSSL confirmed available.
+- [x] oathtool installed and verified (`2.6.14`).
+- [x] LocalStack started successfully (Community edition `3.8.1`).
+- [x] LocalStack verified locally via health endpoint.
+- [x] AWS CLI configured for LocalStack and returning a valid identity.
+- [x] Kubernetes cluster operations verified with Kind (`ccse-control-plane` Ready).
+
+---
+
+## Summary Table
+
+| Item | Tool / Service | Version / Details | Status | Evidence |
+|---|---|---|---|---|
+| Container runtime | Docker | Docker version 29.6.2, build dfc4efb | Completed | img/1-docker-install-part1.png, img/1-docker-install-part2.png, img/1-docker-verify.png |
+| Cloud CLI | AWS CLI v2 | aws-cli/2.36.8 | Completed | img/2-aws-cli-install.png, img/2-3-aws-kind-kubectl-verify.png |
+| Kubernetes tool | Kind | kind version 0.23.0 | Completed | img/2-3-aws-kind-kubectl-verify.png, img/5-kind-cluster-create.png |
+| Kubernetes CLI | kubectl | Client Version v1.36.3, Kustomize v5.8.1 | Completed | img/2-3-aws-kind-kubectl-verify.png |
+| Helper utility | OpenSSL | Pre-installed on Kali | Completed | Terminal output only |
+| Helper utility | oathtool | oathtool (OATH Toolkit) 2.6.14 | Completed | Terminal output only |
+| Local AWS platform | LocalStack | Community edition 3.8.1, started and verified | Completed | img/5-localstack-first-attempt.png, img/5-docker-logs-license-error.png, img/5-localstack-health-success.png |
+| Kubernetes cluster | Kind cluster `ccse` | Created and verified (Ready) | Completed | img/5-kind-cluster-create.png, img/6-kubectl-aws-sts-verify.png |
+| AWS CLI config | LocalStack config | Configured and returning valid identity | Completed | img/6-kubectl-aws-sts-verify.png |
+
+---
+
+## Challenges Encountered
+During the setup process, the following challenges were encountered:
+- **Docker installation failed on Kali Linux** because Docker's official install script does not recognize the `kali-rolling` repository codename. This was resolved by manually adding Docker's APT repository using the `bookworm` codename, since Kali Linux is based on Debian Bookworm.
+- **LocalStack failed to start using the `latest` image tag**, exiting with a Pro license activation error. This was diagnosed using `docker ps -a` and `docker logs`, and resolved by pinning the image to the free Community edition (`localstack/localstack:3.8.1`).
+- Ensuring the `docker` group membership took effect required a full logout/reboot rather than just opening a new terminal window.
+
+## Lessons Learned
+This lab helped reinforce the importance of:
+- Verifying that official installation instructions actually match the specific Linux distribution being used — Kali Linux's Debian base was not automatically detected by Docker's install script.
+- Using diagnostic commands (`docker ps -a`, `docker logs`) to investigate a failing container rather than assuming installation itself was the problem.
+- Pinning specific software versions in a lab/testing environment to avoid unexpected changes in default behavior (such as a `latest` tag switching to a paid edition).
+- Documenting each troubleshooting step clearly, since these deviations from the standard setup process are valuable evidence of understanding, not just following instructions blindly.
+
+## References
+- Docker Documentation: https://docs.docker.com/
+- Docker Engine Install (Debian): https://docs.docker.com/engine/install/debian/
+- AWS CLI Documentation: https://docs.aws.amazon.com/cli/
+- Kind Documentation: https://kind.sigs.k8s.io/
+- Kubernetes kubectl Documentation: https://kubernetes.io/docs/reference/kubectl/
+- LocalStack Documentation: https://docs.localstack.cloud/
+- LocalStack Docker Hub (tags): https://hub.docker.com/r/localstack/localstack/tags
+- OpenSSL Documentation: https://www.openssl.org/docs/
+- OATH Toolkit Documentation: https://www.nongnu.org/oath-toolkit/
+
+## Conclusion
+The environment setup for Lab 0 was completed successfully on a Kali Linux system. All required tools — Docker, AWS CLI v2, Kind, kubectl, OpenSSL, oathtool, and LocalStack — were installed, verified, and configured for local development and testing. Two distribution-specific issues were encountered and resolved: Docker's repository not recognizing Kali's codename, and LocalStack defaulting to a Pro license requirement under the `latest` tag. Both were diagnosed and fixed independently, and the final environment was verified end-to-end, including a working Kubernetes cluster and a functioning LocalStack-to-AWS-CLI connection.
